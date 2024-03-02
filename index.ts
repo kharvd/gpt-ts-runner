@@ -3,13 +3,15 @@ import {
   QuickJSContext,
   QuickJSHandle,
   QuickJSWASMModule,
+  Scope,
   VmFunctionImplementation,
   getQuickJS,
   shouldInterruptAfterDeadline,
 } from "quickjs-emscripten";
 import { ChatCompletionMessageParam } from "openai/resources";
+import util from "util";
 
-const PROMPT = `You will ONLY write JavaScript code to respond to user's input. The code will run in a limited sandboxed environment that only has access to built-in JavaScript APIs: no Web or Node.js. If you need to inspect the result of your code, use the log function. The result will be returned in a follow-up message.
+const PROMPT = `You will ONLY write JavaScript code to respond to user's input. The code will run in a limited sandboxed environment that only has access to built-in JavaScript APIs: no Web or Node.js. If you need to inspect the result of your code, use the \`log\` function. The result will be returned in a follow-up message.
 
 ### Available globals
 \`\`\`typescript
@@ -24,15 +26,13 @@ function getWeather(city: string): string;
 function log(message: string): void;
 
 /**
- * Provide textual response to the user's input. This is the only way to communicate with the user.
+ * Respond to the user with the given string. This is the only way to send a message to the user.
  */
-function respond(response: string): void;
+function respond(message: string): void;
 \`\`\`
 
 ### Output format
 Regardless of the user's request, you should ONLY produce valid JavaScript code surrounded by Markdown code fences. ALWAYS start your message with \`\`\`javascript
-
-The only way to provide a response to the user is by calling the \`respond\` function. Do not expect that the result of the last expression will be returned.
 
 ### Example
 <im_start>user
@@ -44,19 +44,19 @@ respond((128 * 481023).toString());
 
 ### Example
 <im_start>user
-What is the weather in New York? Respond in Russian.
+What is the weather in New York?
 <im_start>assistant
 \`\`\`javascript
 const weather = getWeather("New York");
 log(weather);
 \`\`\`<im_end>
 <im_start>user
+log:
 sunny, high of 75<im_end>
 <im_start>assistant
 \`\`\`javascript
-respond("солнечно, 24 градуса по Цельсию");
-\`\`\`<im_end>
-`;
+respond("The weather in New York is sunny, high of 75. It's a beautiful day!");
+\`\`\`<im_end>`;
 
 const openai = new OpenAI();
 
@@ -90,14 +90,15 @@ function stripMarkdown(str: string) {
 class JsInteraction {
   private context: QuickJSContext;
   private isDone = false;
+  private logQueue: string[] = [];
   private messages: ChatCompletionMessageParam[] = [];
 
   constructor(QuickJS: QuickJSWASMModule) {
     this.context = QuickJS.newContext();
 
     this._addFunction("respond", (arg) => {
-      const response = this.context.getString(arg);
-      this.isDone = true;
+      const response = this.context.dump(arg);
+      console.log("respond", response);
     });
 
     this._addFunction("getWeather", (arg) => {
@@ -108,8 +109,7 @@ class JsInteraction {
 
     this._addFunction("log", (arg) => {
       const str = this.context.dump(arg);
-      console.log("log", str);
-      this._addMessage("user", str);
+      this.logQueue.push(`[log] ${str}`);
     });
 
     this._addMessage("system", PROMPT);
@@ -125,6 +125,12 @@ class JsInteraction {
       const code = stripMarkdown(response);
 
       this._runCode(code);
+
+      this._processLogQueue();
+
+      if (this.messages[this.messages.length - 1].role === "assistant") {
+        this.isDone = true;
+      }
     }
   }
 
@@ -143,14 +149,22 @@ class JsInteraction {
   private _runCode(code: string) {
     const result = this.context.evalCode(code);
     if (result.error) {
-      this._addMessage("user", `Error: ${this.context.dump(result.error)}`);
+      using errorHandle = result.error;
+      const error = this.context.dump(errorHandle);
+      this.logQueue.push(`Exception thrown: ${util.inspect(error)}`);
+    } else {
+      result.value.dispose();
+    }
+  }
+
+  private _processLogQueue() {
+    if (this.logQueue.length === 0) {
       return;
     }
 
-    // if (!this.isDone) {
-    //   const value = this.context.dump(result.value);
-    //   this._addMessage("user", value.toString());
-    // }
+    const message = this.logQueue.join("\n");
+    this._addMessage("user", message);
+    this.logQueue = [];
   }
 
   private _addFunction(
