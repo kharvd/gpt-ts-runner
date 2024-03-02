@@ -10,6 +10,7 @@ import {
 } from "quickjs-emscripten";
 import { ChatCompletionMessageParam } from "openai/resources";
 import util from "util";
+import chalk from "chalk";
 
 const PROMPT = `You will ONLY write JavaScript code to respond to user's input. The code will run in a limited sandboxed environment that only has access to built-in JavaScript APIs: no Web or Node.js. If you need to inspect the result of your code, use the \`log\` function. The result will be returned in a follow-up message.
 
@@ -147,6 +148,8 @@ class JsInteraction {
   }
 
   private _runCode(code: string) {
+    console.log(chalk.bold("Executing JS"));
+    console.log(chalk.gray(code));
     const result = this.context.evalCode(code);
     if (result.error) {
       using errorHandle = result.error;
@@ -176,7 +179,9 @@ class JsInteraction {
   }
 
   private _addMessage(role: "user" | "assistant" | "system", content: string) {
-    console.info(`[${role}]\n${content}\n`);
+    const color =
+      role === "user" || role === "system" ? chalk.yellow : chalk.green;
+    console.info(color(`[${role}]\n${content}\n`));
     this.messages.push({ role, content });
   }
 }
