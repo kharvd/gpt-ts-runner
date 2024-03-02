@@ -1,0 +1,14 @@
+{
+  "name": "gpt-ts-runner",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsc && node ./dist/index.js"
+  },
+  "dependencies": {
+    "openai": "^4.28.4",
+    "typescript": "^5.3.3"
+  }
+}
