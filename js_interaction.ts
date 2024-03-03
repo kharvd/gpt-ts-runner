@@ -9,88 +9,67 @@ import {
 import { ChatCompletionMessageParam } from "openai/resources";
 import util from "util";
 import chalk from "chalk";
-import { Tool, ToolBuilder, ToolNameStep, toolToTs } from "./tool.js";
+import { Tool } from "./tool.js";
 import { transformSchema } from "./zod.js";
+import { InteractionSpec, interaction } from "./interaction.js";
+import { z } from "zod";
 
-const PROMPT = `You will ONLY write JavaScript code to respond to user's input. The code will run in a limited sandboxed environment that only has access to built-in JavaScript APIs: no Web or Node.js. If you need to inspect the result of your code, use the \`log\` function. The result will be returned in a follow-up message.
-
-### Important async/await note
-You can use async/await without any restrictions and without wrapping your code in an async function. The code will be wrapped in an async function automatically. Do not leave any dangling promises. Always await the result of an async operation.
-
-### Available globals
-\`\`\`typescript
-/**
- * Print the given object to the console for inspection. The user will not see the output of this function.
- */
-function log(obj: any): void;
-
-/**
- * Respond to the user with the given string. This is the only way to send a message to the user.
- */
-function respond(message: string): void;
-
-{{globals}}
-\`\`\`
-
-### Output format
-Regardless of the user's request, you should ONLY produce valid JavaScript code surrounded by Markdown code fences. ALWAYS start your message with \`\`\`javascript
-
-### Example
-<im_start>user
-What is 128 * 481023?<im_end>
-<im_start>assistant
-\`\`\`javascript
-// I will simply calculate the result and respond with it
-respond((128 * 481023).toString());
-\`\`\`<im_end>
-
-### Example
-<im_start>user
-What is the weather in New York?
-<im_start>assistant
-\`\`\`javascript
-// Let's use the provided getWeather function to get the weather in New York
-const weather = await getWeather("New York");
-// Now, let's see what the weather is
-log(weather);
-\`\`\`<im_end>
-<im_start>user
-log:
-sunny, high of 75<im_end>
-<im_start>assistant
-\`\`\`javascript
-// I can now respond with the weather
-respond("The weather in New York is sunny, high of 75. It's a beautiful day!");
-\`\`\`<im_end>`;
+export const jsInteraction = () =>
+  interaction()
+    .prompt((p) =>
+      p
+        .section(
+          null,
+          "You are running in an interactive sandboxed JavaScript environment. You will ONLY write JavaScript code to respond to user's input. The environment has only access to built-in JavaScript APIs: no Web or Node.js. If you need to inspect the result of your code, use the `log` function. The result will be returned in a follow-up message."
+        )
+        .section(
+          "Important async/await note",
+          "You can use async/await without any restrictions and without wrapping your code in an async function. The code will be wrapped in an async function automatically. Do not leave any dangling promises. Always await the result of an async operation. DO NOT under any circumstance ever use `then` or `catch`."
+        )
+        .section(
+          "Output format",
+          "Regardless of the user's request, you should ONLY produce valid JavaScript code surrounded by Markdown code fences. ALWAYS start your message with ```javascript"
+        )
+    )
+    .tool((t) =>
+      t
+        .name("log")
+        .description(
+          "Print the given object to the console for inspection. The user will not see the output of this function."
+        )
+        .parameter("obj", z.any(), "The object to inspect")
+        .returnType(z.void())
+        .impl((obj: any) => {
+          throw new Error("Not implemented");
+        })
+    )
+    .tool((t) =>
+      t
+        .name("respond")
+        .description(
+          "Respond to the user with the given string. This is the only way to send a message to the user."
+        )
+        .parameter("message", z.string(), "The message to send")
+        .returnType(z.void())
+        .impl((message: string) => {
+          throw new Error("Not implemented");
+        })
+    )
+    .example((e) =>
+      e
+        .message("user", "What is 128 * 481023?")
+        .message(
+          "assistant",
+          "```javascript",
+          "// I will simply calculate the result and respond with it",
+          "respond((128 * 481023).toString());",
+          "```"
+        )
+    );
 
 const openai = new OpenAI();
 
-function stripMarkdown(str: string) {
-  const lines = str.split("\n");
-  if (lines.length < 2) {
-    return str;
-  }
-
-  const firstLine = lines[0].trim();
-
-  if (
-    ["```javascript", "```typescript", "```", "```js", "```ts"].includes(
-      firstLine
-    )
-  ) {
-    lines.shift();
-  }
-
-  while (lines[lines.length - 1].trim() === "") {
-    lines.pop();
-  }
-
-  if (lines[lines.length - 1].trim() === "```") {
-    lines.pop();
-  }
-
-  return lines.join("\n");
-}
+const BUILT_IN_TOOL_NAMES = ["log", "respond"];
 
 export class JsInteraction {
   private isDone = false;
@@ -100,7 +79,7 @@ export class JsInteraction {
 
   constructor(
     private vm: QuickJSContext,
-    toolsBuilder: (t: ToolNameStep) => Tool<unknown>[]
+    interaction: InteractionSpec
   ) {
     this._addFunction("respond", (arg) => {
       const response = this.vm.dump(arg);
@@ -112,13 +91,13 @@ export class JsInteraction {
       this.logQueue.push(`[log] ${str}`);
     });
 
-    const builder = new ToolBuilder();
-    const tools = toolsBuilder(builder);
-    for (const tool of tools) {
-      this._addTool(tool);
+    for (const tool of interaction.tools) {
+      if (!BUILT_IN_TOOL_NAMES.includes(tool.name)) {
+        this._addTool(tool);
+      }
     }
 
-    this._addMessage("system", this._buildSystemPrompt());
+    this._addMessage("system", interaction.systemPrompt);
   }
 
   async runInteraction(userInput: string) {
@@ -152,11 +131,6 @@ export class JsInteraction {
       const resultHandle = newSchema.parse(result);
       return resultHandle;
     });
-  }
-
-  private _buildSystemPrompt() {
-    const globals = this.tools.map((tool) => toolToTs(tool)).join("\n\n");
-    return PROMPT.replace("{{globals}}", globals);
   }
 
   private async _callGpt() {
@@ -224,4 +198,31 @@ export class JsInteraction {
     console.info(color(`[${role}]\n${content}\n`));
     this.messages.push({ role, content });
   }
+}
+
+function stripMarkdown(str: string) {
+  const lines = str.split("\n");
+  if (lines.length < 2) {
+    return str;
+  }
+
+  const firstLine = lines[0].trim();
+
+  if (
+    ["```javascript", "```typescript", "```", "```js", "```ts"].includes(
+      firstLine
+    )
+  ) {
+    lines.shift();
+  }
+
+  while (lines[lines.length - 1].trim() === "") {
+    lines.pop();
+  }
+
+  if (lines[lines.length - 1].trim() === "```") {
+    lines.pop();
+  }
+
+  return lines.join("\n");
 }
