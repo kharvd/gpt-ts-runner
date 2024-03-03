@@ -94,26 +94,6 @@ const weather = getWeather({ lat: selectedCity.lat, lon: selectedCity.lon });
 log({ city: selectedCity.name, weather });
 ```
 
-Executing JS
-// First, let's define a list of cities with their latitude and longitude
-const cities = [
-    { name: "Tokyo", lat: 35.6895, lon: 139.6917 },
-    { name: "Paris", lat: 48.8566, lon: 2.3522 },
-    { name: "New York", lat: 40.7128, lon: -74.0060 },
-    { name: "Sydney", lat: -33.8688, lon: 151.2093 },
-    { name: "Cairo", lat: 30.0444, lon: 31.2357 },
-    { name: "Rio de Janeiro", lat: -22.9068, lon: -43.1729 }
-];
-
-// Now, let's pick a random city from the list
-const randomIndex = Math.floor(Math.random() * cities.length);
-const selectedCity = cities[randomIndex];
-
-// Let's use the getWeather function to get the weather for the selected city
-const weather = getWeather({ lat: selectedCity.lat, lon: selectedCity.lon });
-
-// We'll log the selected city and its weather to decide on the haiku
-log({ city: selectedCity.name, weather });
 [user]
 [log] { city: 'Tokyo', weather: { temperature: 11.5, windSpeed: 6.5 } }
 
@@ -126,12 +106,6 @@ const haiku = `Chilly Tokyo,\nWhispers of wind through the streets,\nSpring's br
 respond(haiku);
 ```
 
-Executing JS
-// Based on the weather in Tokyo, let's write a haiku
-const haiku = `Chilly Tokyo,\nWhispers of wind through the streets,\nSpring's breath still so cold.`;
-
-// Now, let's respond with the haiku
-respond(haiku);
 Result: Chilly Tokyo,
 Whispers of wind through the streets,
 Spring's breath still so cold.
