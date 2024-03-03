@@ -14,12 +14,14 @@ import { transformSchema } from "./zod.js";
 
 const PROMPT = `You will ONLY write JavaScript code to respond to user's input. The code will run in a limited sandboxed environment that only has access to built-in JavaScript APIs: no Web or Node.js. If you need to inspect the result of your code, use the \`log\` function. The result will be returned in a follow-up message.
 
+You can use async/await without any restrictions and without wrapping your code in an async function. The code will be wrapped in an async function automatically.
+
 ### Available globals
 \`\`\`typescript
 /**
- * Print the given string to the console for inspection. The user will not see the output of this function.
+ * Print the given object to the console for inspection. The user will not see the output of this function.
  */
-function log(message: string): void;
+function log(obj: any): void;
 
 /**
  * Respond to the user with the given string. This is the only way to send a message to the user.
@@ -45,7 +47,7 @@ respond((128 * 481023).toString());
 What is the weather in New York?
 <im_start>assistant
 \`\`\`javascript
-const weather = getWeather("New York");
+const weather = await getWeather("New York");
 log(weather);
 \`\`\`<im_end>
 <im_start>user
@@ -86,25 +88,22 @@ function stripMarkdown(str: string) {
 }
 
 export class JsInteraction {
-  private vm: QuickJSContext;
   private isDone = false;
   private logQueue: string[] = [];
   private tools: Tool<unknown>[] = [];
   private messages: ChatCompletionMessageParam[] = [];
 
   constructor(
-    QuickJS: QuickJSWASMModule,
+    private vm: QuickJSContext,
     toolsBuilder: (t: ToolNameStep) => Tool<unknown>[]
   ) {
-    this.vm = QuickJS.newContext();
-
     this._addFunction("respond", (arg) => {
       const response = this.vm.dump(arg);
       console.log("respond", response);
     });
 
     this._addFunction("log", (arg) => {
-      const str = this.vm.dump(arg);
+      const str = util.inspect(this.vm.dump(arg));
       this.logQueue.push(`[log] ${str}`);
     });
 
@@ -126,7 +125,9 @@ export class JsInteraction {
       this._addMessage("assistant", response);
       const code = stripMarkdown(response);
 
-      this._runCode(code);
+      await this._runCode(code);
+
+      this.vm.runtime.executePendingJobs();
 
       this._processLogQueue();
 
@@ -134,10 +135,6 @@ export class JsInteraction {
         this.isDone = true;
       }
     }
-  }
-
-  [Symbol.dispose]() {
-    this.vm.dispose();
   }
 
   private _addTool(tool: Tool<unknown>) {
@@ -154,7 +151,6 @@ export class JsInteraction {
 
   private _buildSystemPrompt() {
     const globals = this.tools.map((tool) => toolToTs(tool)).join("\n\n");
-    console.log(globals);
     return PROMPT.replace("{{globals}}", globals);
   }
 
@@ -162,20 +158,40 @@ export class JsInteraction {
     return openai.chat.completions.create({
       messages: this.messages,
       model: "gpt-4-0125-preview",
+      // model: "gpt-3.5-turbo",
       temperature: 0,
     });
   }
 
-  private _runCode(code: string) {
+  private async _runCode(code: string) {
+    const wrappedCode = `(async () => {
+        ${code}
+    })()`;
+
     console.log(chalk.bold("Executing JS"));
-    console.log(chalk.gray(code));
-    const result = this.vm.evalCode(code);
+    console.log(chalk.gray(wrappedCode));
+
+    const result = this.vm.evalCode(wrappedCode);
     if (result.error) {
       using errorHandle = result.error;
       const error = this.vm.dump(errorHandle);
       this.logQueue.push(`Exception thrown: ${util.inspect(error)}`);
     } else {
-      result.value.dispose();
+      using promiseHandle = result.value;
+
+      this.vm.runtime.executePendingJobs();
+      const nativePromise = this.vm.resolvePromise(promiseHandle);
+      this.vm.runtime.executePendingJobs();
+      const resolvedResult = await nativePromise;
+      this.vm.runtime.executePendingJobs();
+
+      if (resolvedResult.error) {
+        using errorHandle = resolvedResult.error;
+        const error = this.vm.dump(errorHandle);
+        this.logQueue.push(`Exception thrown: ${util.inspect(error)}`);
+      } else {
+        resolvedResult.value.dispose();
+      }
     }
   }
 

@@ -37,14 +37,14 @@ export function transformSchema(
   }
 
   if (schema instanceof z.ZodObject) {
-    const newShape: ZodRawShape = {};
+    const newShape: Record<string, ZodType<QuickJSHandle>> = {};
     for (const [key, value] of Object.entries(schema.shape)) {
       newShape[key] = transformSchema(vm, value as ZodTypeAny);
     }
     return z.object(newShape).transform((val) => {
       const obj = vm.newObject();
       for (const [key, value] of Object.entries(val)) {
-        vm.setProp(obj, key, value);
+        value.consume((v) => vm.setProp(obj, key, v));
       }
       return obj;
     });
@@ -55,7 +55,7 @@ export function transformSchema(
     return z.array(newSchema).transform((val) => {
       const arr = vm.newArray();
       for (let i = 0; i < val.length; i++) {
-        vm.setProp(arr, i, val[i]);
+        val[i].consume((v) => vm.setProp(arr, i, v));
       }
       return arr;
     });
@@ -66,6 +66,26 @@ export function transformSchema(
       transformSchema(vm, option)
     );
     return z.union(newSchemas);
+  }
+
+  if (schema instanceof z.ZodPromise) {
+    const newSchema = transformSchema(vm, schema.unwrap());
+    return z.promise(newSchema).transform((promise) => {
+      const newPromise = vm.newPromise();
+      promise
+        .then((val) => {
+          val.consume((result) => newPromise.resolve(result));
+        })
+        .catch((err) => {
+          vm.newError(err.message).consume((error) => newPromise.reject(error));
+        });
+
+      newPromise.settled.then(() => {
+        vm.runtime.executePendingJobs();
+      });
+
+      return newPromise.handle;
+    });
   }
 
   throw new Error("Unsupported schema type");
