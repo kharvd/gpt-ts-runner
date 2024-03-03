@@ -1,4 +1,10 @@
-## Example output
+## Example
+
+```bash
+yarn run start "Using a random number generator, pick a random city. Then write a haiku about the weather there"
+```
+
+Output:
 
 ````
 [system]
