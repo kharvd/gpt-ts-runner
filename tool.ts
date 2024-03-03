@@ -104,31 +104,6 @@ export class ToolBuilder<ParamType extends unknown[], ReturnType> {
   }
 }
 
-// Usage example
-// const toolBuilder: NameStep = new ToolBuilder();
-// const tool = toolBuilder
-//   .name("getWeather")
-//   .description("Get the weather for a location")
-//   .parameter(
-//     "location",
-//     z.object({
-//       lat: z.number(),
-//       lon: z.number(),
-//     }),
-//     "The location to get the weather for"
-//   )
-//   .parameter("date", z.date(), "The date to get the weather for")
-//   .returnType(
-//     z.object({
-//       temperature: z.number(),
-//       conditions: z.string(),
-//     })
-//   )
-//   .function((location) => ({
-//     temperature: 75,
-//     conditions: "sunny",
-//   }));
-
 function serializeType(type: ZodTypeAny): string {
   const node = zodToTs(type).node;
   return printNode(node);

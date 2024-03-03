@@ -14,7 +14,8 @@ import { transformSchema } from "./zod.js";
 
 const PROMPT = `You will ONLY write JavaScript code to respond to user's input. The code will run in a limited sandboxed environment that only has access to built-in JavaScript APIs: no Web or Node.js. If you need to inspect the result of your code, use the \`log\` function. The result will be returned in a follow-up message.
 
-You can use async/await without any restrictions and without wrapping your code in an async function. The code will be wrapped in an async function automatically.
+### Important async/await note
+You can use async/await without any restrictions and without wrapping your code in an async function. The code will be wrapped in an async function automatically. Do not leave any dangling promises. Always await the result of an async operation.
 
 ### Available globals
 \`\`\`typescript
@@ -39,6 +40,7 @@ Regardless of the user's request, you should ONLY produce valid JavaScript code 
 What is 128 * 481023?<im_end>
 <im_start>assistant
 \`\`\`javascript
+// I will simply calculate the result and respond with it
 respond((128 * 481023).toString());
 \`\`\`<im_end>
 
@@ -47,7 +49,9 @@ respond((128 * 481023).toString());
 What is the weather in New York?
 <im_start>assistant
 \`\`\`javascript
+// Let's use the provided getWeather function to get the weather in New York
 const weather = await getWeather("New York");
+// Now, let's see what the weather is
 log(weather);
 \`\`\`<im_end>
 <im_start>user
@@ -55,6 +59,7 @@ log:
 sunny, high of 75<im_end>
 <im_start>assistant
 \`\`\`javascript
+// I can now respond with the weather
 respond("The weather in New York is sunny, high of 75. It's a beautiful day!");
 \`\`\`<im_end>`;
 
