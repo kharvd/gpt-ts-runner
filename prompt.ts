@@ -28,3 +28,14 @@ export class PromptBuilder {
 }
 
 export const prompt = () => new PromptBuilder();
+
+export const defaultJsPrompt = (p: PromptBuilder) =>
+  p
+    .section(
+      null,
+      "You are running in an interactive sandboxed JavaScript environment. You will ONLY write JavaScript code to respond to user's input. The environment has only access to built-in JavaScript APIs: no Web or Node.js. If you need to inspect the result of your code, use the `log` function. The result will be returned in a follow-up message."
+    )
+    .section(
+      "Output format",
+      "Regardless of the user's request, you should ONLY produce valid JavaScript code surrounded by Markdown code fences. ALWAYS start your message with ```javascript"
+    );

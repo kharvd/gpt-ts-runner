@@ -1,5 +1,6 @@
 import { PromptBuilder } from "./prompt.js";
 import { Tool, ToolBuilder, ToolNameStep, toolToTs } from "./tool.js";
+import { ZodType, z } from "zod";
 
 export type Message = {
   role: "user" | "assistant" | "system";
@@ -27,14 +28,16 @@ class ExampleBuilder {
   }
 }
 
-export type InteractionSpec = {
+export type InteractionSpec<T> = {
   systemPrompt: string;
+  resultType: ZodType<T>;
   tools: Tool<unknown>[];
 };
 
-export class InteractionBuilder {
+export class InteractionBuilder<T> {
   private _instructions: PromptBuilder = new PromptBuilder();
   private _tools: Tool<unknown>[] = [];
+  private _resultType: z.ZodTypeAny = z.string();
   private _examples: string[] = [];
 
   prompt(builder: (p: PromptBuilder) => PromptBuilder) {
@@ -56,11 +59,33 @@ export class InteractionBuilder {
     return this;
   }
 
-  build(): InteractionSpec {
+  returnType<NewT>(returnType: ZodType<NewT>): InteractionBuilder<NewT> {
+    this._resultType = returnType;
+    this.tool((t) =>
+      t
+        .name("respond")
+        .description(
+          "Conclude the conversation by producing the result. The function can only be called once per session."
+        )
+        .parameter(
+          "result",
+          returnType,
+          "The result of the interactive session"
+        )
+        .returnType(z.never())
+        .impl((result) => {
+          throw new Error("Not implemented");
+        })
+    );
+    return this as unknown as InteractionBuilder<NewT>;
+  }
+
+  build(): InteractionSpec<T> {
     this._addToolsSection();
     this._addExamplesSection();
     return {
       systemPrompt: this._instructions.build(),
+      resultType: this._resultType,
       tools: this._tools,
     };
   }

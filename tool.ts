@@ -127,3 +127,15 @@ export function toolToTs(tool: Tool<unknown>): string {
 
   return `${tsDoc}\nfunction ${tool.name}(${parameterTypes}): ${returnType}`;
 }
+
+export const logTool = (t: ToolNameStep) =>
+  t
+    .name("log")
+    .description(
+      "Print the given object to the console for inspection. The user will not see the output of this function."
+    )
+    .parameter("obj", z.any(), "The object to inspect")
+    .returnType(z.void())
+    .impl((obj: any) => {
+      throw new Error("Not implemented");
+    });

@@ -51,6 +51,7 @@ async function main() {
           )
           .impl(getWeather)
       )
+      .returnType(z.object({ result: z.string(), notes: z.string() }))
       .example((e) =>
         e
           .message("user", "What is the weather in New York?")
@@ -75,7 +76,8 @@ async function main() {
       .build()
   );
 
-  await interaction.runInteraction(process.argv[2]);
+  const result = await interaction.runInteraction(process.argv[2]);
+  console.log("Result:", result);
 
   context.dispose();
 

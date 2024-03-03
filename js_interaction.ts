@@ -11,48 +11,16 @@ import {
 import { ChatCompletionMessageParam } from "openai/resources";
 import util from "util";
 import chalk from "chalk";
-import { Tool } from "./tool.js";
+import { Tool, logTool } from "./tool.js";
 import { transformSchema } from "./zod.js";
 import { InteractionSpec, interaction } from "./interaction.js";
 import { z } from "zod";
+import { defaultJsPrompt } from "./prompt.js";
 
 export const jsInteraction = () =>
   interaction()
-    .prompt((p) =>
-      p
-        .section(
-          null,
-          "You are running in an interactive sandboxed JavaScript environment. You will ONLY write JavaScript code to respond to user's input. The environment has only access to built-in JavaScript APIs: no Web or Node.js. If you need to inspect the result of your code, use the `log` function. The result will be returned in a follow-up message."
-        )
-        .section(
-          "Output format",
-          "Regardless of the user's request, you should ONLY produce valid JavaScript code surrounded by Markdown code fences. ALWAYS start your message with ```javascript"
-        )
-    )
-    .tool((t) =>
-      t
-        .name("log")
-        .description(
-          "Print the given object to the console for inspection. The user will not see the output of this function."
-        )
-        .parameter("obj", z.any(), "The object to inspect")
-        .returnType(z.void())
-        .impl((obj: any) => {
-          throw new Error("Not implemented");
-        })
-    )
-    .tool((t) =>
-      t
-        .name("respond")
-        .description(
-          "Respond to the user with the given string. This is the only way to send a message to the user."
-        )
-        .parameter("message", z.string(), "The message to send")
-        .returnType(z.void())
-        .impl((message: string) => {
-          throw new Error("Not implemented");
-        })
-    )
+    .prompt(defaultJsPrompt)
+    .tool(logTool)
     .example((e) =>
       e
         .message("user", "What is 128 * 481023?")
@@ -69,19 +37,20 @@ const openai = new OpenAI();
 
 const BUILT_IN_TOOL_NAMES = ["log", "respond"];
 
-export class JsInteraction {
+export class JsInteraction<T> {
   private isDone = false;
   private logQueue: string[] = [];
   private tools: Tool<unknown>[] = [];
+  private result?: T;
   private messages: ChatCompletionMessageParam[] = [];
 
   constructor(
     private vm: QuickJSAsyncContext,
-    interaction: InteractionSpec
+    interaction: InteractionSpec<T>
   ) {
     this._addFunction("respond", (arg) => {
-      const response = this.vm.dump(arg);
-      console.log("respond", response);
+      this.result = interaction.resultType.parse(this.vm.dump(arg));
+      console.log("respond", this.result);
     });
 
     this._addFunction("log", (arg) => {
@@ -98,7 +67,7 @@ export class JsInteraction {
     this._addMessage("system", interaction.systemPrompt);
   }
 
-  async runInteraction(userInput: string) {
+  async runInteraction(userInput: string): Promise<T> {
     this._addMessage("user", userInput);
 
     while (!this.isDone) {
@@ -115,6 +84,8 @@ export class JsInteraction {
         this.isDone = true;
       }
     }
+
+    return this.result!;
   }
 
   private _addTool(tool: Tool<unknown>) {
