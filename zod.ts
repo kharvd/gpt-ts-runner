@@ -29,6 +29,10 @@ export function transformSchema(
     return schema.transform(() => vm.undefined);
   }
 
+  if (schema instanceof z.ZodNever) {
+    return z.undefined().transform(() => vm.undefined);
+  }
+
   if (schema instanceof z.ZodBigInt) {
     return schema.transform((val) => vm.newBigInt(val));
   }

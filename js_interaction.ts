@@ -15,9 +15,12 @@ import { z } from "zod";
 
 const openai = new OpenAI();
 
-const BUILT_IN_TOOL_NAMES = ["log", "respond"];
+export interface JsInteractionContext {
+  resolve(result: unknown): void;
+  addLogMessage(message: string): void;
+}
 
-export class JsInteraction<T> {
+export class JsInteraction<T> implements JsInteractionContext {
   private isDone = false;
   private logQueue: string[] = [];
   private tools: Tool<unknown>[] = [];
@@ -26,24 +29,22 @@ export class JsInteraction<T> {
 
   constructor(
     private vm: QuickJSAsyncContext,
-    interaction: InteractionSpec<T>
+    private interaction: InteractionSpec<T>
   ) {
-    this._addFunction("respond", (arg) => {
-      this.result = interaction.resultType.parse(this.vm.dump(arg));
-    });
-
-    this._addFunction("log", (arg) => {
-      const str = util.inspect(this.vm.dump(arg));
-      this.logQueue.push(`[log] ${str}`);
-    });
-
     for (const tool of interaction.tools) {
-      if (!BUILT_IN_TOOL_NAMES.includes(tool.name)) {
-        this._addTool(tool);
-      }
+      this._addTool(tool);
     }
 
     this._addMessage("system", interaction.systemPrompt);
+  }
+
+  resolve(result: unknown) {
+    this.result = this.interaction.resultType.parse(result);
+    this.isDone = true;
+  }
+
+  addLogMessage(message: string) {
+    this.logQueue.push(message);
   }
 
   async runInteraction(userInput: string): Promise<T> {
@@ -74,14 +75,14 @@ export class JsInteraction<T> {
     if (tool.returnType instanceof z.ZodPromise) {
       this._addAsyncFunction(tool.name, async (...args) => {
         const argument = args.map((arg) => this.vm.dump(arg));
-        const result = await tool.impl(...argument);
+        const result = await tool.impl(this, ...argument);
         const resultHandle = newSchema.parse(result);
         return resultHandle;
       });
     } else {
       this._addFunction(tool.name, (...args) => {
         const argument = args.map((arg) => this.vm.dump(arg));
-        const result = tool.impl(...argument);
+        const result = tool.impl(this, ...argument);
         const resultHandle = newSchema.parse(result);
         return resultHandle;
       });

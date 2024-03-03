@@ -1,5 +1,7 @@
 import { ZodType, ZodTypeAny, z } from "zod";
 import { printNode, zodToTs } from "zod-to-ts";
+import { JsInteractionContext } from "./js_interaction";
+import util from "util";
 
 type ParameterDef<ParamType> = {
   name: string;
@@ -19,7 +21,7 @@ export type Tool<ReturnType> = {
   description: string;
   parameters: ParameterDef<unknown>[];
   returnType: ZodType<ReturnType>;
-  impl: (...param: unknown[]) => unknown;
+  impl: (ctx: JsInteractionContext, ...param: unknown[]) => unknown;
 };
 
 export interface ToolNameStep {
@@ -43,7 +45,9 @@ interface ReturnTypeStep<ParamType extends unknown[]> {
 }
 
 interface ImplStep<ParamType extends unknown[], ReturnType> {
-  impl(func: (...param: ParamType) => ReturnType): Tool<ReturnType>;
+  impl(
+    func: (ctx: JsInteractionContext, ...param: ParamType) => ReturnType
+  ): Tool<ReturnType>;
 }
 
 export class ToolBuilder<ParamType extends unknown[], ReturnType> {
@@ -140,8 +144,8 @@ export const logTool = tool((t) =>
     )
     .parameter("obj", z.any(), "The object to inspect")
     .returnType(z.void())
-    .impl((obj: any) => {
-      throw new Error("Not implemented");
+    .impl((ctx, obj) => {
+      ctx.addLogMessage(`[log] ${util.inspect(obj)}`);
     })
 );
 
@@ -154,7 +158,7 @@ export const respondTool = <T>(returnType: ZodType<T>) =>
       )
       .parameter("result", returnType, "The result of the interactive session")
       .returnType(z.never())
-      .impl((result) => {
-        throw new Error("Not implemented");
+      .impl((ctx, result) => {
+        return ctx.resolve(result) as never;
       })
   );

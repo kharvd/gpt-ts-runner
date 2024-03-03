@@ -31,7 +31,7 @@ const weatherTool = tool((t) =>
     .returnType(
       z.promise(z.object({ temperature: z.number(), windSpeed: z.number() }))
     )
-    .impl(getWeather)
+    .impl((_, ...args) => getWeather(...args))
 );
 
 async function main() {
