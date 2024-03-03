@@ -154,7 +154,7 @@ export const respondTool = <T>(returnType: ZodType<T>) =>
     t
       .name("respond")
       .description(
-        "Conclude the conversation by producing the result. The function can only be called once per session."
+        "Conclude the conversation by producing the result. The function can only be called once per session. You WILL NOT be able to see any log results produced within the same code block if the block concludes with `respond`."
       )
       .parameter("result", returnType, "The result of the interactive session")
       .returnType(z.never())
