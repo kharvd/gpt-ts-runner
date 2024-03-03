@@ -3,6 +3,7 @@ import {
   newQuickJSWASMModule,
   DEBUG_SYNC,
   TestQuickJSWASMModule,
+  newAsyncContext,
 } from "quickjs-emscripten";
 import { JsInteraction, jsInteraction } from "./js_interaction.js";
 import { z } from "zod";
@@ -20,12 +21,13 @@ async function getWeather(location: { lat: number; lon: number }) {
 }
 
 async function main() {
-  const QuickJS = new TestQuickJSWASMModule(
-    await newQuickJSWASMModule(DEBUG_SYNC)
-  );
+  // const QuickJS = new TestQuickJSWASMModule(
+  //   await newQuickJSWASMModule(DEBUG_SYNC)
+  // );
   // const QuickJS = await getQuickJS();
-  const context = QuickJS.newContext();
+  // const context = QuickJS.newContext();
   // const QuickJS = await newQuickJSWASMModule(DEBUG_SYNC);
+  const context = await newAsyncContext();
 
   const interaction = new JsInteraction(
     context,
@@ -56,7 +58,7 @@ async function main() {
             "assistant",
             "```javascript",
             "// Let's use the provided getWeather function to get the weather in New York",
-            "const weather = await getWeather({ lat: 40.7128, lon: -74.0060 });",
+            "const weather = getWeather({ lat: 40.7128, lon: -74.0060 });",
             "// Now, let's see what the weather is",
             "log(weather);",
             "```"
@@ -77,7 +79,7 @@ async function main() {
 
   context.dispose();
 
-  QuickJS.assertNoMemoryAllocated();
+  // QuickJS.assertNoMemoryAllocated();
 
   console.log("done");
 }

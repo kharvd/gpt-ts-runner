@@ -85,22 +85,7 @@ export function transformSchema(
 
   if (schema instanceof z.ZodPromise) {
     const newSchema = transformSchema(vm, schema.unwrap());
-    return z.promise(newSchema).transform((promise) => {
-      const newPromise = vm.newPromise();
-      promise
-        .then((val) => {
-          val.consume((result) => newPromise.resolve(result));
-        })
-        .catch((err) => {
-          vm.newError(err.message).consume((error) => newPromise.reject(error));
-        });
-
-      newPromise.settled.then(() => {
-        vm.runtime.executePendingJobs();
-      });
-
-      return newPromise.handle;
-    });
+    return newSchema;
   }
 
   throw new Error("Unsupported schema type: " + schema.constructor.name);

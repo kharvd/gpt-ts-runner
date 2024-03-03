@@ -105,6 +105,10 @@ export class ToolBuilder<ParamType extends unknown[], ReturnType> {
 }
 
 function serializeType(type: ZodTypeAny): string {
+  if (type instanceof z.ZodPromise) {
+    return serializeType(type.unwrap());
+  }
+
   const node = zodToTs(type).node;
   return printNode(node);
 }

@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import {
+  AsyncFunctionImplementation,
+  QuickJSAsyncContext,
   QuickJSContext,
   QuickJSHandle,
   QuickJSWASMModule,
@@ -21,10 +23,6 @@ export const jsInteraction = () =>
         .section(
           null,
           "You are running in an interactive sandboxed JavaScript environment. You will ONLY write JavaScript code to respond to user's input. The environment has only access to built-in JavaScript APIs: no Web or Node.js. If you need to inspect the result of your code, use the `log` function. The result will be returned in a follow-up message."
-        )
-        .section(
-          "Important async/await note",
-          "You can use async/await without any restrictions and without wrapping your code in an async function. The code will be wrapped in an async function automatically. Do not leave any dangling promises. Always await the result of an async operation. DO NOT under any circumstance ever use `then` or `catch`."
         )
         .section(
           "Output format",
@@ -78,7 +76,7 @@ export class JsInteraction {
   private messages: ChatCompletionMessageParam[] = [];
 
   constructor(
-    private vm: QuickJSContext,
+    private vm: QuickJSAsyncContext,
     interaction: InteractionSpec
   ) {
     this._addFunction("respond", (arg) => {
@@ -111,8 +109,6 @@ export class JsInteraction {
 
       await this._runCode(code);
 
-      this.vm.runtime.executePendingJobs();
-
       this._processLogQueue();
 
       if (this.messages[this.messages.length - 1].role === "assistant") {
@@ -125,12 +121,21 @@ export class JsInteraction {
     this.tools.push(tool);
     const newSchema = transformSchema(this.vm, tool.returnType);
 
-    this._addFunction(tool.name, (...args) => {
-      const argument = args.map((arg) => this.vm.dump(arg));
-      const result = tool.impl(...argument);
-      const resultHandle = newSchema.parse(result);
-      return resultHandle;
-    });
+    if (tool.returnType instanceof z.ZodPromise) {
+      this._addAsyncFunction(tool.name, async (...args) => {
+        const argument = args.map((arg) => this.vm.dump(arg));
+        const result = await tool.impl(...argument);
+        const resultHandle = newSchema.parse(result);
+        return resultHandle;
+      });
+    } else {
+      this._addFunction(tool.name, (...args) => {
+        const argument = args.map((arg) => this.vm.dump(arg));
+        const result = tool.impl(...argument);
+        const resultHandle = newSchema.parse(result);
+        return resultHandle;
+      });
+    }
   }
 
   private async _callGpt() {
@@ -143,34 +148,16 @@ export class JsInteraction {
   }
 
   private async _runCode(code: string) {
-    const wrappedCode = `(async () => {
-        ${code}
-    })()`;
-
     console.log(chalk.bold("Executing JS"));
-    console.log(chalk.gray(wrappedCode));
+    console.log(chalk.gray(code));
 
-    const result = this.vm.evalCode(wrappedCode);
+    const result = await this.vm.evalCodeAsync(code);
     if (result.error) {
       using errorHandle = result.error;
       const error = this.vm.dump(errorHandle);
       this.logQueue.push(`Exception thrown: ${util.inspect(error)}`);
     } else {
-      using promiseHandle = result.value;
-
-      this.vm.runtime.executePendingJobs();
-      const nativePromise = this.vm.resolvePromise(promiseHandle);
-      this.vm.runtime.executePendingJobs();
-      const resolvedResult = await nativePromise;
-      this.vm.runtime.executePendingJobs();
-
-      if (resolvedResult.error) {
-        using errorHandle = resolvedResult.error;
-        const error = this.vm.dump(errorHandle);
-        this.logQueue.push(`Exception thrown: ${util.inspect(error)}`);
-      } else {
-        resolvedResult.value.dispose();
-      }
+      result.value.dispose();
     }
   }
 
@@ -189,6 +176,11 @@ export class JsInteraction {
     fn: VmFunctionImplementation<QuickJSHandle>
   ) {
     using fnHandle = this.vm.newFunction(name, fn);
+    this.vm.setProp(this.vm.global, name, fnHandle);
+  }
+
+  private _addAsyncFunction(name: string, fn: AsyncFunctionImplementation) {
+    using fnHandle = this.vm.newAsyncifiedFunction(name, fn);
     this.vm.setProp(this.vm.global, name, fnHandle);
   }
 
