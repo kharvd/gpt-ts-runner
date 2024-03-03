@@ -1,12 +1,5 @@
 import { QuickJSContext, QuickJSHandle } from "quickjs-emscripten";
-import {
-  RawCreateParams,
-  z,
-  ZodRawShape,
-  ZodType,
-  ZodTypeAny,
-  ZodTypeDef,
-} from "zod";
+import { z, ZodType, ZodTypeAny, ZodTypeDef } from "zod";
 
 export function transformSchema(
   vm: QuickJSContext,
@@ -32,8 +25,30 @@ export function transformSchema(
     return schema.transform(() => vm.undefined);
   }
 
+  if (schema instanceof z.ZodVoid) {
+    return schema.transform(() => vm.undefined);
+  }
+
   if (schema instanceof z.ZodBigInt) {
     return schema.transform((val) => vm.newBigInt(val));
+  }
+
+  if (schema instanceof z.ZodBranded) {
+    return transformSchema(vm, schema.unwrap());
+  }
+
+  if (schema instanceof z.ZodNullable) {
+    const newSchema = transformSchema(vm, schema.unwrap());
+    return newSchema
+      .nullable()
+      .transform((val) => (val === null ? vm.null : val));
+  }
+
+  if (schema instanceof z.ZodOptional) {
+    const newSchema = transformSchema(vm, schema.unwrap());
+    return newSchema
+      .optional()
+      .transform((val) => (val === undefined ? vm.undefined : val));
   }
 
   if (schema instanceof z.ZodObject) {
@@ -88,5 +103,5 @@ export function transformSchema(
     });
   }
 
-  throw new Error("Unsupported schema type");
+  throw new Error("Unsupported schema type: " + schema.constructor.name);
 }
