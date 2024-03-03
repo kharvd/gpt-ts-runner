@@ -23,7 +23,6 @@ export interface JsInteractionContext {
 export class JsInteraction<T> implements JsInteractionContext {
   private isDone = false;
   private logQueue: string[] = [];
-  private tools: Tool<unknown>[] = [];
   private result?: T;
   private messages: ChatCompletionMessageParam[] = [];
 
@@ -69,7 +68,6 @@ export class JsInteraction<T> implements JsInteractionContext {
   }
 
   private _addTool(tool: Tool<unknown>) {
-    this.tools.push(tool);
     const newSchema = transformSchema(this.vm, tool.returnType);
 
     if (tool.returnType instanceof z.ZodPromise) {
