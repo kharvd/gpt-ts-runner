@@ -128,7 +128,11 @@ export function toolToTs(tool: Tool<unknown>): string {
   return `${tsDoc}\nfunction ${tool.name}(${parameterTypes}): ${returnType}`;
 }
 
-export const logTool = (t: ToolNameStep) =>
+export const tool = <T>(builder: (t: ToolNameStep) => Tool<T>) => {
+  return builder;
+};
+
+export const logTool = tool((t) =>
   t
     .name("log")
     .description(
@@ -138,4 +142,19 @@ export const logTool = (t: ToolNameStep) =>
     .returnType(z.void())
     .impl((obj: any) => {
       throw new Error("Not implemented");
-    });
+    })
+);
+
+export const respondTool = <T>(returnType: ZodType<T>) =>
+  tool((t) =>
+    t
+      .name("respond")
+      .description(
+        "Conclude the conversation by producing the result. The function can only be called once per session."
+      )
+      .parameter("result", returnType, "The result of the interactive session")
+      .returnType(z.never())
+      .impl((result) => {
+        throw new Error("Not implemented");
+      })
+  );

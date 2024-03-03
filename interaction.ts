@@ -1,5 +1,11 @@
 import { PromptBuilder } from "./prompt.js";
-import { Tool, ToolBuilder, ToolNameStep, toolToTs } from "./tool.js";
+import {
+  Tool,
+  ToolBuilder,
+  ToolNameStep,
+  respondTool,
+  toolToTs,
+} from "./tool.js";
 import { ZodType, z } from "zod";
 
 export type Message = {
@@ -61,22 +67,7 @@ export class InteractionBuilder<T> {
 
   returnType<NewT>(returnType: ZodType<NewT>): InteractionBuilder<NewT> {
     this._resultType = returnType;
-    this.tool((t) =>
-      t
-        .name("respond")
-        .description(
-          "Conclude the conversation by producing the result. The function can only be called once per session."
-        )
-        .parameter(
-          "result",
-          returnType,
-          "The result of the interactive session"
-        )
-        .returnType(z.never())
-        .impl((result) => {
-          throw new Error("Not implemented");
-        })
-    );
+    this.tool(respondTool(returnType));
     return this as unknown as InteractionBuilder<NewT>;
   }
 

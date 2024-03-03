@@ -2,36 +2,16 @@ import OpenAI from "openai";
 import {
   AsyncFunctionImplementation,
   QuickJSAsyncContext,
-  QuickJSContext,
   QuickJSHandle,
-  QuickJSWASMModule,
   VmFunctionImplementation,
-  shouldInterruptAfterDeadline,
 } from "quickjs-emscripten";
 import { ChatCompletionMessageParam } from "openai/resources";
 import util from "util";
 import chalk from "chalk";
-import { Tool, logTool } from "./tool.js";
+import { Tool } from "./tool.js";
 import { transformSchema } from "./zod.js";
-import { InteractionSpec, interaction } from "./interaction.js";
+import { InteractionSpec } from "./interaction.js";
 import { z } from "zod";
-import { defaultJsPrompt } from "./prompt.js";
-
-export const jsInteraction = () =>
-  interaction()
-    .prompt(defaultJsPrompt)
-    .tool(logTool)
-    .example((e) =>
-      e
-        .message("user", "What is 128 * 481023?")
-        .message(
-          "assistant",
-          "```javascript",
-          "// I will simply calculate the result and respond with it",
-          "respond((128 * 481023).toString());",
-          "```"
-        )
-    );
 
 const openai = new OpenAI();
 
@@ -50,7 +30,6 @@ export class JsInteraction<T> {
   ) {
     this._addFunction("respond", (arg) => {
       this.result = interaction.resultType.parse(this.vm.dump(arg));
-      console.log("respond", this.result);
     });
 
     this._addFunction("log", (arg) => {

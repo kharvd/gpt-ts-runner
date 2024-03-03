@@ -1,13 +1,9 @@
-import {
-  getQuickJS,
-  newQuickJSWASMModule,
-  DEBUG_SYNC,
-  TestQuickJSWASMModule,
-  newAsyncContext,
-} from "quickjs-emscripten";
-import { JsInteraction, jsInteraction } from "./js_interaction.js";
+import { newAsyncContext } from "quickjs-emscripten";
+import { JsInteraction } from "./js_interaction.js";
 import { z } from "zod";
 import { interaction } from "./interaction.js";
+import { logTool, tool } from "./tool.js";
+import { defaultJsPrompt } from "./prompt.js";
 
 async function getWeather(location: { lat: number; lon: number }) {
   const weather = await fetch(
@@ -20,38 +16,45 @@ async function getWeather(location: { lat: number; lon: number }) {
   };
 }
 
+const weatherTool = tool((t) =>
+  t
+    .name("getWeather")
+    .description("Get the weather for a location")
+    .parameter(
+      "location",
+      z.object({
+        lat: z.number(),
+        lon: z.number(),
+      }),
+      "The location to get the weather for"
+    )
+    .returnType(
+      z.promise(z.object({ temperature: z.number(), windSpeed: z.number() }))
+    )
+    .impl(getWeather)
+);
+
 async function main() {
-  // const QuickJS = new TestQuickJSWASMModule(
-  //   await newQuickJSWASMModule(DEBUG_SYNC)
-  // );
-  // const QuickJS = await getQuickJS();
-  // const context = QuickJS.newContext();
-  // const QuickJS = await newQuickJSWASMModule(DEBUG_SYNC);
   const context = await newAsyncContext();
 
-  const interaction = new JsInteraction(
+  const inter = new JsInteraction(
     context,
-    jsInteraction()
-      .tool((t) =>
-        t
-          .name("getWeather")
-          .description("Get the weather for a location")
-          .parameter(
-            "location",
-            z.object({
-              lat: z.number(),
-              lon: z.number(),
-            }),
-            "The location to get the weather for"
+    interaction()
+      .prompt(defaultJsPrompt)
+      .tool(logTool)
+      .tool(weatherTool)
+      .returnType(z.string())
+      .example((e) =>
+        e
+          .message("user", "What is 128 * 481023?")
+          .message(
+            "assistant",
+            "```javascript",
+            "// I will simply calculate the result and respond with it",
+            "respond((128 * 481023).toString());",
+            "```"
           )
-          .returnType(
-            z.promise(
-              z.object({ temperature: z.number(), windSpeed: z.number() })
-            )
-          )
-          .impl(getWeather)
       )
-      .returnType(z.object({ result: z.string(), notes: z.string() }))
       .example((e) =>
         e
           .message("user", "What is the weather in New York?")
@@ -76,12 +79,10 @@ async function main() {
       .build()
   );
 
-  const result = await interaction.runInteraction(process.argv[2]);
+  const result = await inter.runInteraction(process.argv[2]);
   console.log("Result:", result);
 
   context.dispose();
-
-  // QuickJS.assertNoMemoryAllocated();
 
   console.log("done");
 }
