@@ -17,6 +17,17 @@ export type Example = {
   messages: Message[];
 };
 
+function mapRole(role: "user" | "assistant" | "system") {
+  switch (role) {
+    case "user":
+      return "Human";
+    case "assistant":
+      return "Assistant";
+    case "system":
+      return "System";
+  }
+}
+
 class ExampleBuilder {
   private _messages: Message[] = [];
 
@@ -26,11 +37,12 @@ class ExampleBuilder {
     return this;
   }
 
-  build(): string {
-    const messages = this._messages.map((m) => {
-      return `<im_start>${m.role}\n${m.content}<im_end>`;
-    });
-    return messages.join("\n");
+  build(): Message[] {
+    // const messages = this._messages.map((m) => {
+    //   return `${mapRole(m.role)}:\n${m.content}\n`;
+    // });
+    // return messages.join("\n");
+    return this._messages;
   }
 }
 
@@ -38,13 +50,14 @@ export type InteractionSpec<T> = {
   systemPrompt: string;
   resultType: ZodType<T>;
   tools: Tool<unknown>[];
+  examples: Message[][];
 };
 
 export class InteractionBuilder<T> {
   private _instructions: PromptBuilder = new PromptBuilder();
   private _tools: Tool<unknown>[] = [];
   private _resultType: z.ZodTypeAny = z.string();
-  private _examples: string[] = [];
+  private _examples: Message[][] = [];
 
   prompt(builder: (p: PromptBuilder) => PromptBuilder) {
     builder(this._instructions);
@@ -73,24 +86,18 @@ export class InteractionBuilder<T> {
 
   build(): InteractionSpec<T> {
     this._addToolsSection();
-    this._addExamplesSection();
+    // this._addExamplesSection();
     return {
       systemPrompt: this._instructions.build(),
       resultType: this._resultType,
       tools: this._tools,
+      examples: this._examples,
     };
   }
 
   private _addToolsSection() {
     const globals = this._tools.map((tool) => toolToTs(tool)).join("\n\n");
-    this._instructions.section("Available globals", globals);
-  }
-
-  private _addExamplesSection() {
-    const examples = this._examples
-      .map((e, i) => `#### Example ${i + 1}\n${e}`)
-      .join("\n\n");
-    this._instructions.section("Examples", examples);
+    this._instructions.section("globals", globals);
   }
 }
 

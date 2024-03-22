@@ -1,19 +1,17 @@
-import OpenAI from "openai";
 import {
   AsyncFunctionImplementation,
   QuickJSAsyncContext,
   QuickJSHandle,
   VmFunctionImplementation,
 } from "quickjs-emscripten";
-import { ChatCompletionMessageParam } from "openai/resources";
 import util from "util";
 import chalk from "chalk";
 import { Tool } from "./tool.js";
 import { transformSchema } from "./zod.js";
 import { InteractionSpec } from "./interaction.js";
 import { z } from "zod";
-
-const openai = new OpenAI();
+import { ChatCompletionMessage, LlmModel } from "./llm.js";
+import prompts from "prompts";
 
 export interface JsInteractionContext {
   resolve(result: unknown): void;
@@ -24,43 +22,73 @@ export class JsInteraction<T> implements JsInteractionContext {
   private isDone = false;
   private logQueue: string[] = [];
   private result?: T;
-  private messages: ChatCompletionMessageParam[] = [];
+  private messages: ChatCompletionMessage[] = [];
 
   constructor(
     private vm: QuickJSAsyncContext,
-    private interaction: InteractionSpec<T>
+    private interaction: InteractionSpec<T>,
+    private llm: LlmModel
   ) {
     for (const tool of interaction.tools) {
       this._addTool(tool);
     }
 
     this._addMessage("system", interaction.systemPrompt);
+
+    for (const example of interaction.examples) {
+      for (const message of example) {
+        this._addMessage(message.role, message.content);
+      }
+    }
   }
 
   resolve(result: unknown) {
-    this.result = this.interaction.resultType.parse(result);
-    this.isDone = true;
+    const res = this.interaction.resultType.parse(result);
+    console.log(chalk.bold("Result:"), res);
   }
 
   addLogMessage(message: string) {
     this.logQueue.push(message);
   }
 
-  async runInteraction(userInput: string): Promise<T> {
+  private async _promptUser(): Promise<string | undefined> {
+    const userInput = (
+      await prompts({
+        type: "text",
+        name: "value",
+        message: ">",
+      })
+    ).value;
+
+    if (!userInput) {
+      this.isDone = true;
+      return undefined;
+    }
+
     this._addMessage("user", userInput);
 
+    return userInput;
+  }
+
+  async runInteraction(): Promise<T> {
+    await this._promptUser();
+
     while (!this.isDone) {
-      const completion = await this._callGpt();
-      const response = completion.choices[0].message.content!;
-      this._addMessage("assistant", response);
+      console.log(chalk.green("[assistant]"));
+      const response = await this.llm.runChatCompletion(this.messages);
+      this._addMessage("assistant", response, /* print */ false);
       const code = stripMarkdown(response);
 
-      await this._runCode(code);
+      if (code === "") {
+        this.addLogMessage("<error>\nNo code block found\n</error>");
+      } else {
+        await this._runCode(code);
+      }
 
       this._processLogQueue();
 
       if (this.messages[this.messages.length - 1].role === "assistant") {
-        this.isDone = true;
+        await this._promptUser();
       }
     }
 
@@ -87,15 +115,6 @@ export class JsInteraction<T> implements JsInteractionContext {
     }
   }
 
-  private async _callGpt() {
-    return openai.chat.completions.create({
-      messages: this.messages,
-      model: "gpt-4-0125-preview",
-      // model: "gpt-3.5-turbo",
-      temperature: 0,
-    });
-  }
-
   private async _runCode(code: string) {
     console.log(chalk.bold("Executing JS"));
     console.log(chalk.gray(code));
@@ -104,7 +123,9 @@ export class JsInteraction<T> implements JsInteractionContext {
     if (result.error) {
       using errorHandle = result.error;
       const error = this.vm.dump(errorHandle);
-      this.logQueue.push(`Exception thrown: ${util.inspect(error)}`);
+      this.logQueue.push(
+        `<error>\nException thrown: ${util.inspect(error)}\n</error>`
+      );
     } else {
       result.value.dispose();
     }
@@ -133,37 +154,45 @@ export class JsInteraction<T> implements JsInteractionContext {
     this.vm.setProp(this.vm.global, name, fnHandle);
   }
 
-  private _addMessage(role: "user" | "assistant" | "system", content: string) {
-    const color =
-      role === "user" || role === "system" ? chalk.yellow : chalk.green;
-    console.info(color(`[${role}]\n${content}\n`));
+  private _addMessage(
+    role: "user" | "assistant" | "system",
+    content: string,
+    print = true
+  ) {
+    if (print) {
+      const color =
+        role === "user" || role === "system" ? chalk.yellow : chalk.green;
+      console.info(color(`[${role}]\n${content}\n`));
+    }
     this.messages.push({ role, content });
   }
 }
 
 function stripMarkdown(str: string) {
   const lines = str.split("\n");
-  if (lines.length < 2) {
-    return str;
-  }
 
-  const firstLine = lines[0].trim();
-
-  if (
-    ["```javascript", "```typescript", "```", "```js", "```ts"].includes(
-      firstLine
-    )
-  ) {
+  while (lines.length > 0 && lines[0].trim() != "<javascript>") {
     lines.shift();
   }
 
-  while (lines[lines.length - 1].trim() === "") {
+  if (lines.length === 0) {
+    return "";
+  }
+
+  lines.shift();
+
+  while (
+    lines.length > 0 &&
+    lines[lines.length - 1].trim() != "</javascript>"
+  ) {
     lines.pop();
   }
 
-  if (lines[lines.length - 1].trim() === "```") {
-    lines.pop();
+  if (lines.length === 0) {
+    return "";
   }
 
-  return lines.join("\n");
+  lines.pop();
+
+  return lines.join("\n").trim();
 }
